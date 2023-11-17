@@ -1,10 +1,14 @@
 package main
 
 import (
+	gs "centralReg/grpc_status"
 	pb "centralReg/service_reg"
+	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/gorilla/websocket"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"log"
 	"net/http"
 	"sync"
@@ -59,26 +63,31 @@ func checkRESTServiceStatus(service *ApiService) {
 }
 
 func checkGRPCServiceStatus(service *ApiService) {
-	// Set up a connection to the server.
-	//conn, err := grpc.Dial(fmt.Sprintf("%s:%d", service.Host, service.Port), grpc.WithInsecure())
-	//if err != nil {
-	//	service.Status = "Down"
-	//	return
-	//}
-	//defer conn.Close()
-	//
-	//// Here you would typically call a method on a client corresponding to the gRPC service
-	//// For example, if there's a health check service:
-	//client := NewHealthCheckClient(conn)
-	//ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	//defer cancel()
-	//
-	//resp, err := client.Check(ctx, &HealthCheckRequest{})
-	//if err != nil || resp.Status != HealthCheckResponse_SERVING {
-	//	service.Status = "Down"
-	//} else {
-	//	service.Status = "Up"
-	//}
+	// Set up a connection to the server with insecure credentials for simplicity
+	conn, err := grpc.Dial(fmt.Sprintf("%s:%d", service.Host, service.Port), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		log.Printf("Failed to dial gRPC service: %v", err)
+		service.Status = "Down"
+		return
+	}
+	defer conn.Close()
+
+	// Create a new StatusService client
+	client := gs.NewStatusServiceClient(conn)
+
+	// Prepare a context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+
+	// Call the CheckStatus method
+	response, err := client.CheckStatus(ctx, &gs.StatusRequest{})
+	if err != nil {
+		log.Printf("Error calling CheckStatus: %v", err)
+		service.Status = "Down"
+	} else {
+		service.Status = response.Status
+		//service.Status = "Up"
+	}
 }
 
 func registerService(w http.ResponseWriter, r *http.Request) {
@@ -90,7 +99,6 @@ func registerService(w http.ResponseWriter, r *http.Request) {
 	defer conn.Close()
 
 	for {
-		// Read message from WebSocket connection
 		_, msg, err := conn.ReadMessage()
 		if err != nil {
 			log.Println("Error reading message:", err)
@@ -100,7 +108,6 @@ func registerService(w http.ResponseWriter, r *http.Request) {
 		var reg Registration
 		if err := json.Unmarshal(msg, &reg); err != nil {
 			log.Printf("Error decoding registration data: %s", err)
-			// Optionally, send an error message back to the client
 			conn.WriteMessage(websocket.TextMessage, []byte("Invalid registration data"))
 			continue
 		}
@@ -110,11 +117,11 @@ func registerService(w http.ResponseWriter, r *http.Request) {
 			Name: reg.Name,
 			Host: reg.Host,
 			Port: reg.Port,
-			Type: reg.Type,
+			Type: reg.Type, // This should be either "REST" or "gRPC"
 		}
 		registry.Unlock()
 
-		log.Printf("Service %s which is %s registered successfully with Host: %s, Port: %d\n", reg.Name, reg.Type, reg.Host, reg.Port)
+		log.Printf("Service %s registered successfully. Type: %s", reg.Name, reg.Type)
 		conn.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf("Service %s registered successfully", reg.Name)))
 	}
 }
