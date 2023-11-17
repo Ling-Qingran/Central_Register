@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package status;
+
+service StatusService {
+  rpc CheckStatus (StatusRequest) returns (StatusResponse);
+}
+
+message StatusRequest {
+  // Request fields
+}
+
+message StatusResponse {
+  string status = 1;
+}
