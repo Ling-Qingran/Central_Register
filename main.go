@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"github.com/gorilla/websocket"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"log"
 	"net/http"
 	"sync"
@@ -64,7 +63,7 @@ func checkRESTServiceStatus(service *ApiService) {
 
 func checkGRPCServiceStatus(service *ApiService) {
 	// Set up a connection to the server with insecure credentials for simplicity
-	conn, err := grpc.Dial(fmt.Sprintf("%s:%d", service.Host, service.Port), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.Dial(fmt.Sprintf("%s:%d", service.Host, service.Port), grpc.WithInsecure(), grpc.WithBlock())
 	if err != nil {
 		log.Printf("Failed to dial gRPC service: %v", err)
 		service.Status = "Down"
@@ -87,6 +86,7 @@ func checkGRPCServiceStatus(service *ApiService) {
 	} else {
 		service.Status = response.Status
 		//service.Status = "Up"
+		log.Printf("Service %s status checked: %s", service.Name, service.Status)
 	}
 }
 
